@@ -1,196 +1,212 @@
+import threading
 from tkinter import filedialog, messagebox
-from ultralytics import YOLO
+from tkinter import ttk
 import tkinter as tk
+from ultralytics import YOLO
 import torch
 
-class App:
-	def __init__(self, root):
-		self.root = root
-		self.root.title("YOLO Training and Detection")
-		self.root.geometry("400x70")
-		# self.root.configure(bg="#000000") 
-		self.device = "cuda" if torch.cuda.is_available() else "cpu"
-		self.model = YOLO("/home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt")
-		self.input_path = None
-		self.output_path = None
-		self.mode=tk.StringVar()
-		self.mode.set("train")
-		self.radio_button_train = tk.Radiobutton(root, text='Train', variable=self.mode, value='train', command=self.change_mode, font=('Arial', 12))
-		self.radio_button_train.place(x=20, y=25)
-		self.radio_button_detect = tk.Radiobutton(root, text='Detect', variable=self.mode, value='detect', command=self.change_mode, font=('Arial', 12))
-		self.radio_button_detect.place(x=100, y=25)
-		self.choosen_model=tk.StringVar()
-		self.choosen_model.set("yolo11")
-		self.image_size=tk.StringVar()
-		self.image_size.set("Select Image size")
-		self.dynamic_widgets = []
+# Global variables
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = YOLO("/home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt")
+input_path, output_path = None, None
+mode, choosen_model = None, None
+image_size, epochs, batch_size = None, None, None
+status_label, settings_frame, file_frame, action_frame = None, None, None, None
+widgets = {}
 
-	def set_train_widgets(self, root):
-		self.experiment_name_label = tk.Label(root, text="Enter experiment name", font=('Arial', 12))
-		self.experiment_name_label.place(x=20, y=75)
-		self.experiment_name_entry = tk.Entry(root)
-		self.experiment_name_entry.place(x=200, y=75)
-		self.dynamic_widgets.extend([self.experiment_name_label, self.experiment_name_entry])
 
-		self.choose_model_label=tk.Label(root, text="Choose model", font=('Arial', 12))
-		self.choose_model_label.place(x=20, y=125)
-		self.radio_button_yolov7 = tk.Radiobutton(root, text='Yolov7', variable=self.choosen_model, value='yolo7', command=self.change_model, font=('Arial', 12))
-		self.radio_button_yolov7.place(x=140, y=125)
-		self.radio_button_yolov11 = tk.Radiobutton(root, text='Yolov11', variable=self.choosen_model, value='yolo11', command=self.change_model, font=('Arial', 12))
-		self.radio_button_yolov11.place(x=225, y=125)
-		self.dynamic_widgets.extend([self.choose_model_label, self.radio_button_yolov7, self.radio_button_yolov11])
+# Utility Functions
+def initialize_frames(root):
+    """Create and return the main UI frames."""
+    settings_frame = ttk.Frame(root, relief="groove", padding=10)
+    settings_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-		self.input_browse_button = tk.Button(root, text="Select .yaml file for training", command=self.browse_input_folder, font=('Arial', 12), width=55)
-		self.input_browse_button.place(x=20, y=175)
-		self.output_browse_button = tk.Button(root, text="Select output folder to save logs and model weights", command=self.browse_output_folder, font=('Arial', 12), width=55)
-		self.output_browse_button.place(x=20, y=225)	
-		self.dynamic_widgets.extend([self.input_browse_button, self.output_browse_button])
+    file_frame = ttk.Frame(root, relief="groove", padding=10)
+    file_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
 
-		self.weight_browse_button = tk.Button(root, text="Select custom model weight", command=self.browse_weights, font=('Arial', 12))
-		self.weight_browse_button.place(x=20, y=275)
-		self.dynamic_widgets.extend([self.weight_browse_button])
+    action_frame = ttk.Frame(root, relief="groove", padding=10)
+    action_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
-		self.image_size_dropbox = tk.OptionMenu(root, self.image_size, 412, 512, 640, 1024, 1280)
-		self.image_size_dropbox.place(x=280, y=275)
-		self.image_size_label = tk.Label(root, text="Image size", font=('Arial', 12))
-		self.image_size_label.place(x=280, y=300)
-		self.dynamic_widgets.extend([self.image_size_dropbox, self.image_size_label])
+    return settings_frame, file_frame, action_frame
 
-		self.epochs_slider = tk.Scale(root, from_=1, to=300, orient="horizontal", length=100, resolution=1, font=('Arial', 12))
-		self.epochs_slider.set(100)
-		self.epochs_slider.place(x=20, y=325)
-		self.epoch_label=tk.Label(root, text="Epochs", font=('Arial', 12))
-		self.epoch_label.place(x=20, y=365)
-		self.dynamic_widgets.extend([self.epochs_slider, self.epoch_label])
 
-		self.batch_slider = tk.Scale(root, from_=2, to=32, orient="horizontal", length=100, resolution=1, font=('Arial', 12))
-		self.batch_slider.set(100)
-		self.batch_slider.place(x=150, y=325)
-		self.batch_label = tk.Label(root, text="Batch size", font=('Arial', 12))
-		self.batch_label.place(x=150, y=365)
-		self.dynamic_widgets.extend([self.batch_slider, self.batch_label])			
-		
-		self.run_button = tk.Button(root, text="Train", command=self.run_model, font=('Arial', 12), width=10)
-		self.run_button.place(x=20, y=400)
-		self.dynamic_widgets.extend([self.run_button])	
-		self.root.geometry("505x460")
+def create_status_bar(root):
+    """Create and return the status bar."""
+    status_label = ttk.Label(root, text="Ready", anchor="center", relief="sunken",
+                             background="#00bcd4", foreground="white")
+    status_label.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
+    return status_label
 
-	def set_detect_widgets(self, root):
-		self.experiment_name_label = tk.Label(root, text="Enter experiment name", font=('Arial', 12))
-		self.experiment_name_label.place(x=20, y=75)
-		self.experiment_name_entry = tk.Entry(root)
-		self.experiment_name_entry.place(x=200, y=75)
-		self.dynamic_widgets.extend([self.experiment_name_label, self.experiment_name_entry])
 
-		self.choose_model_label=tk.Label(root, text="Choose model", font=('Arial', 12))
-		self.choose_model_label.place(x=20, y=125)
-		self.radio_button_yolov7 = tk.Radiobutton(root, text='Yolov7', variable=self.choosen_model, value='yolo7', command=self.change_model, font=('Arial', 12))
-		self.radio_button_yolov7.place(x=140, y=125)
-		self.radio_button_yolov11 = tk.Radiobutton(root, text='Yolov11', variable=self.choosen_model, value='yolo11', command=self.change_model, font=('Arial', 12))
-		self.radio_button_yolov11.place(x=225, y=125)
-		self.dynamic_widgets.extend([self.choose_model_label, self.radio_button_yolov7, self.radio_button_yolov11])
+def create_mode_selection(root, mode, change_mode_callback):
+    """Create and return the mode selection radio buttons."""
+    mode_frame = ttk.Frame(root, padding=10, relief="groove")
+    mode_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
 
-		self.input_browse_button = tk.Button(root, text="Select input folder containing input images", command=self.browse_input_folder, font=('Arial', 12), width=55)
-		self.input_browse_button.place(x=20, y=175)
-		self.output_browse_button = tk.Button(root, text="Select output folder to save logs and model weights", command=self.browse_output_folder, font=('Arial', 12), width=55)
-		self.output_browse_button.place(x=20, y=225)	
-		self.dynamic_widgets.extend([self.input_browse_button, self.output_browse_button])
+    mode_label = ttk.Label(mode_frame, text="Mode:", font=("Helvetica Neue", 14), foreground="#333333")
+    mode_label.grid(row=0, column=0, padx=10, pady=5)
 
-		self.weight_browse_button = tk.Button(root, text="Select custom model weight", command=self.browse_weights, font=('Arial', 12))
-		self.weight_browse_button.place(x=20, y=275)
-		self.dynamic_widgets.extend([self.weight_browse_button])
+    radio_button_train = ttk.Radiobutton(
+        mode_frame, text="Train", variable=mode, value="train", command=change_mode_callback)
+    radio_button_train.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-		self.image_size_dropbox = tk.OptionMenu(root, self.image_size, 412, 512, 640, 1024, 1280)
-		self.image_size_dropbox.place(x=280, y=275)
-		self.image_size_label = tk.Label(root, text="Image size", font=('Arial', 12))
-		self.image_size_label.place(x=280, y=300)
-		self.dynamic_widgets.extend([self.image_size_dropbox, self.image_size_label])
-		
-		self.run_button = tk.Button(root, text="Detect", command=self.run_model, font=('Arial', 12), width=10)
-		self.run_button.place(x=20, y=335)
-		self.dynamic_widgets.extend([self.run_button])	
-		self.root.geometry("505x395")
+    radio_button_detect = ttk.Radiobutton(
+        mode_frame, text="Detect", variable=mode, value="detect", command=change_mode_callback)
+    radio_button_detect.grid(row=0, column=2, padx=10, pady=5, sticky="w")
 
-	def change_mode(self):
-		for widget in self.dynamic_widgets:
-			if widget:
-				widget.destroy() 
-		self.dynamic_widgets.clear()
-		if self.mode.get() == "train":
-			self.set_train_widgets(root)
-		elif self.mode.get() == "detect":
-			self.set_detect_widgets(root)
-		self.root.update()
+    return mode_frame, mode_label, radio_button_train, radio_button_detect
 
-	def change_model(self):
-		if self.choosen_model.get() == "yolo7":
-			self.model = YOLO("/home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt")
-		elif self.choosen_model.get() == "yolo11":
-			self.model = YOLO("/home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt")
 
-	def browse_input_folder(self):
-		if self.mode.get() == "train":
-			self.input_path = filedialog.askopenfilename(filetypes=[("YAML files", "*.yml *.yaml")])
-			print(self.input_path)
-		elif self.mode.get() == "detect":
-			self.input_path = filedialog.askdirectory(title="Select input folder containing input images")
-			print(self.input_path)
+def add_label(frame, text, row, column):
+    """Add a label to the frame and return it."""
+    label = ttk.Label(frame, text=text, font=("Helvetica Neue", 12), foreground="#333333")
+    label.grid(row=row, column=column, sticky="w", padx=10, pady=5)
+    return label
 
-	def browse_output_folder(self):
-		if self.mode.get() == "train":
-			self.output_path = filedialog.askdirectory(title="Select output folder to save logs and model weights")
-			print(self.output_path)
-		elif self.mode.get() == "detect":
-			self.output_path = filedialog.askdirectory(title="Select output folder to save detections")
-			print(self.output_path)
 
-	def browse_weights(self):
-		if self.mode.get() == "train":
-			self.weight_path = filedialog.askopenfilename(filetypes=[("YAML files", "*.pth *.pt")])
-			print(self.weight_path)
+def add_entry(frame, row, column):
+    """Add an entry box to the frame and return it."""
+    entry = ttk.Entry(frame, font=("Helvetica Neue", 12), foreground="#333333", background="#ffffff")
+    entry.grid(row=row, column=column, padx=10, pady=5)
+    return entry
 
-	def run_model(self):
-		if not self.input_path:
-			messagebox.showerror("Error", "Please select a valid input file or folder")
-			return
-		elif not self.output_path:
-			messagebox.showerror("Error", "Please select a valid output file or folder")
-			return
-		elif self.image_size.get() == "Select Image size":
-			messagebox.showerror("Error", "Please select an image size.")
-			return
 
-		if self.mode.get() == "train":
-			try:
-				train_results = self.model.train(
-					data=self.input_path,
-					project=self.output_path,
-					name=self.experiment_name_entry.get(),
-					epochs=self.epochs_slider.get(),
-					batch=self.batch_slider.get(),
-					imgsz=self.image_size.get(),
-					device=self.device
-				)
-				messagebox.showinfo("Success", "Training completed successfully!")
-			except Exception as e:
-				messagebox.showerror("Error", f"Training failed: {e}")
-		elif self.mode.get() == "detect":
-			try:
-				train_results = self.model.predict(
-					source=self.input_path,
-					project=self.output_path,
-					name=self.experiment_name_entry.get(),
-					imgsz=self.image_size.get(),
-					device=self.device,
-					save=True,
-					save_txt=True,
-					save_conf=True
-				)
-				messagebox.showinfo("Success", "Detection completed successfully!")
-			except Exception as e:
-				messagebox.showerror("Error", f"Detection failed: {e}")
+def add_combobox(frame, row, column, values, default, variable):
+    """Add a combobox to the frame and return it."""
+    combobox = ttk.Combobox(frame, values=values, state="readonly", textvariable=variable, font=("Helvetica Neue", 12))
+    combobox.set(default)
+    combobox.grid(row=row, column=column, padx=10, pady=5)
+    return combobox
 
+
+def add_button(frame, text, command, row, column):
+    """Add a button to the frame and return it."""
+    button = ttk.Button(frame, text=text, command=command, style="TButton")
+    button.grid(row=row, column=column, padx=10, pady=5)
+    return button
+
+
+def set_train_widgets():
+    """Configure widgets for training mode and store them in the widgets dictionary."""
+    widgets['experiment_label'] = add_label(settings_frame, "Experiment Name:", row=0, column=0)
+    widgets['experiment_entry'] = add_entry(settings_frame, row=0, column=1)
+
+    widgets['model_label'] = add_label(settings_frame, "Choose Model:", row=1, column=0)
+    widgets['model_combobox'] = add_combobox(
+        settings_frame, row=1, column=1, values=["yolo7", "yolo11"], default="yolo11", variable=choosen_model)
+
+    widgets['input_button'] = add_button(file_frame, "Input (YAML file)", browse_input_folder, row=0, column=0)
+    widgets['output_button'] = add_button(file_frame, "Output Folder", browse_output_folder, row=0, column=1)
+
+    widgets['img_size_label'] = add_label(file_frame, "Image Size:", row=1, column=0)
+    widgets['img_size_combobox'] = add_combobox(
+        file_frame, row=1, column=1, values=[416, 512, 640, 1024, 1280], default=640, variable=image_size)
+
+    widgets['epochs_label'] = add_label(file_frame, "Epochs:", row=2, column=0)
+    widgets['epochs_combobox'] = add_combobox(
+        file_frame, row=2, column=1, values=[1, 5, 10, 50, 100], default=100, variable=epochs)
+
+    widgets['batch_label'] = add_label(file_frame, "Batch Size:", row=3, column=0)
+    widgets['batch_combobox'] = add_combobox(
+        file_frame, row=3, column=1, values=[8, 16, 32, 64], default=16, variable=batch_size)
+
+    widgets['train_button'] = add_button(action_frame, "Train", run_model, row=0, column=0)
+
+
+def set_detect_widgets():
+    """Configure widgets for detection mode and store them in the widgets dictionary."""
+    widgets['experiment_label'] = add_label(settings_frame, "Experiment Name:", row=0, column=0)
+    widgets['experiment_entry'] = add_entry(settings_frame, row=0, column=1)
+
+    widgets['model_label'] = add_label(settings_frame, "Choose Model:", row=1, column=0)
+    widgets['model_combobox'] = add_combobox(
+        settings_frame, row=1, column=1, values=["yolo7", "yolo11"], default="yolo11", variable=choosen_model)
+
+    widgets['input_button'] = add_button(file_frame, "Input Folder", browse_input_folder, row=0, column=0)
+    widgets['output_button'] = add_button(file_frame, "Output Folder", browse_output_folder, row=0, column=1)
+
+    widgets['img_size_label'] = add_label(file_frame, "Image Size:", row=1, column=0)
+    widgets['img_size_combobox'] = add_combobox(
+        file_frame, row=1, column=1, values=[416, 512, 640, 1024, 1280], default=640, variable=image_size)
+
+    widgets['detect_button'] = add_button(action_frame, "Detect", run_model, row=0, column=0)
+
+
+def browse_input_folder():
+    """Open a file dialog to select input path."""
+    global input_path
+    input_path = filedialog.askopenfilename(filetypes=[("YAML files", "*.yml *.yaml")])
+
+
+def browse_output_folder():
+    """Open a file dialog to select output path."""
+    global output_path
+    output_path = filedialog.askdirectory(title="Select Output Folder")
+
+
+def change_mode():
+    """Switch between Train and Detect modes and update widgets."""
+    for widget in settings_frame.winfo_children():
+        widget.grid_forget()
+    for widget in file_frame.winfo_children():
+        widget.grid_forget()
+    for widget in action_frame.winfo_children():
+        widget.grid_forget()
+
+    if mode.get() == "train":
+        set_train_widgets()
+    else:
+        set_detect_widgets()
+
+
+def run_model():
+    """Run the YOLO model based on the selected mode."""
+    if mode.get() == "train":
+        print("Training the model...")
+        model.train(data=input_path, imgsz=image_size.get(), epochs=epochs.get(), batch=batch_size.get())
+    else:
+        print("Detecting with the model...")
+        model.predict(source=input_path, save=True, imgsz=image_size.get())
+
+
+def setup_gui(root):
+    """Set up the main GUI."""
+    global mode, choosen_model, image_size, epochs, batch_size, status_label, settings_frame, file_frame, action_frame
+
+    # Initialize Tkinter variables
+    mode = tk.StringVar(value="train")
+    choosen_model = tk.StringVar(value="yolo11")
+    image_size = tk.IntVar(value=640)
+    epochs = tk.IntVar(value=100)
+    batch_size = tk.IntVar(value=16)
+
+    # Configure root window
+    root.title("YOLO Training and Detection")
+    root.geometry("450x600")
+    root.configure(bg="#f5f5f5")
+    root.resizable(True, True)
+
+    # Apply styles
+    style = ttk.Style()
+    style.theme_use('clam')
+    style.configure("TLabel", font=("Helvetica Neue", 12), padding=5, background="#f5f5f5", foreground="#333333")
+    style.configure("TButton", font=("Helvetica Neue", 12), padding=6, relief="flat", background="#00bcd4", foreground="white")
+    style.map("TButton", background=[("active", "#80e0e0")])
+    style.configure("TRadiobutton", font=("Helvetica Neue", 12), padding=5, background="#f5f5f5", foreground="#333333")
+
+    # Initialize frames
+    settings_frame, file_frame, action_frame = initialize_frames(root)
+
+    # Create status bar and mode selection
+    status_label = create_status_bar(root)
+    create_mode_selection(root, mode, change_mode)
+
+    # Setup initial widgets for the mode
+    change_mode()
+
+
+# Main function
 if __name__ == "__main__":
-	root=tk.Tk()
-	app=App(root)
-	root.mainloop()
+    root = tk.Tk()
+    setup_gui(root)
+    root.mainloop()
