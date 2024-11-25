@@ -1,12 +1,12 @@
 task: detect
 mode: train
 model: /home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt
-data: null
+data: /home/jarvis/Desktop/projects/datasets/vdc/data.yaml
 epochs: 100
 time: null
 patience: 100
 batch: 16
-imgsz: 640
+imgsz: 416
 save: true
 save_period: -1
 cache: false

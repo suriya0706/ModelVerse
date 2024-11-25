@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: /home/jarvis/Desktop/projects/FR/model_weights/yolo11n.pt
-data: /home/jarvis/Desktop/projects/FR/dataset/data.yaml
+data: /home/jarvis/Desktop/projects/datasets/vdc/data.yaml
 epochs: 10
 time: null
 patience: 100
