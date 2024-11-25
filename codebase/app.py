@@ -1,4 +1,4 @@
-from new_app_utils import add_label, add_entry, add_combobox, add_button
+from app_utils import add_label, add_entry, add_combobox, add_button
 from tkinter import filedialog, messagebox
 from ultralytics import YOLO
 from tkinter import ttk
@@ -107,8 +107,12 @@ def set_detect_widgets():
 def browse_input_folder():
     """Open a file dialog to select input path."""
     global input_path
-    input_path = filedialog.askopenfilename(filetypes=[("YAML files", "*.yml *.yaml")])
-    return input_path
+    if mode.get() == "train":
+        input_path = filedialog.askopenfilename(filetypes=[("YAML files", "*.yml *.yaml")])
+        return input_path
+    elif mode.get() == "detect":
+        input_path = filedialog.askdirectory(title="Select Input Folder")
+        return input_path
 
 
 def browse_output_folder():
